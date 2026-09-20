@@ -98,15 +98,15 @@ class Scheduler:
         self.block_manager.deallocate(seq)
         self.waiting.appendleft(seq)
 
-    def postprocess(self, output: SchedulerOutput, token_ids: list[int]):
+    def postprocess(self, output: SchedulerOutput, token_ids: list[int | None]):
         assert len(token_ids) == len(output.scheduled)
-        is_prefill = output.is_prefill
         for item, token_id in zip(output.scheduled, token_ids):
             seq = item.seq
             self.block_manager.hash_blocks(seq)
             seq.num_cached_tokens += seq.num_scheduled_tokens
             seq.num_scheduled_tokens = 0
-            if is_prefill and seq.num_cached_tokens < seq.num_tokens:
+            if token_id is None:
+                assert item.is_prefill and seq.num_cached_tokens < seq.num_tokens
                 continue
             seq.append_token(token_id)
             if (not seq.ignore_eos and token_id == self.eos) or seq.num_completion_tokens == seq.max_tokens:

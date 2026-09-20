@@ -188,8 +188,8 @@ class ModelRunner:
         set_context(False, slot_mapping=slot_mapping, context_lens=context_lens, block_tables=block_tables)
         return input_ids, positions
 
-    def prepare_sample(self, seqs: list[Sequence]):
-        temperatures = [seq.temperature for seq in seqs]
+    def prepare_sample(self, scheduled: list[ScheduledSequence]):
+        temperatures = [item.seq.temperature for item in scheduled]
         temperatures = torch.tensor(temperatures, dtype=torch.float32, pin_memory=True).cuda(non_blocking=True)
         return temperatures
 
@@ -212,15 +212,30 @@ class ModelRunner:
             graph.replay()
             return self.model.compute_logits(graph_vars["outputs"][:bs])
 
-    def run(self, scheduler_output: SchedulerOutput) -> list[int]:
+    def run(self, scheduler_output: SchedulerOutput) -> list[int | None] | None:
         is_prefill = scheduler_output.is_prefill
         if any(item.is_prefill != is_prefill for item in scheduler_output.scheduled):
             raise RuntimeError("mixed scheduler outputs are not supported until M4")
         seqs = scheduler_output.seqs
         input_ids, positions = self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
-        temperatures = self.prepare_sample(seqs) if self.rank == 0 else None
         logits = self.run_model(input_ids, positions, is_prefill)
-        token_ids = self.sampler(logits, temperatures).tolist() if self.rank == 0 else None
+        #1. 找出哪些请求应采样：sample_indices
+        #2. 只取这些请求的 logits / temperature：sampled
+        #3. 将采样结果填回完整计划：token_ids[i] = token_id
+        if self.rank == 0:
+            sample_indices = [
+                i for i, item in enumerate(scheduler_output.scheduled)
+                if not item.is_prefill or item.seq.num_cached_tokens + item.seq.num_scheduled_tokens == item.seq.num_tokens
+            ]
+            token_ids = [None] * len(seqs)
+            if sample_indices:
+                sampled = [scheduler_output.scheduled[i] for i in sample_indices]
+                temperatures = self.prepare_sample(sampled)
+                sampled_token_ids = self.sampler(logits[sample_indices], temperatures).tolist()
+                for i, token_id in zip(sample_indices, sampled_token_ids):
+                    token_ids[i] = token_id
+        else:
+            token_ids = None
         reset_context()
         return token_ids
 
