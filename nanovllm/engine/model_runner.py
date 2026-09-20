@@ -6,6 +6,7 @@ from multiprocessing.shared_memory import SharedMemory
 
 from nanovllm.config import Config
 from nanovllm.engine.sequence import Sequence
+from nanovllm.engine.scheduler import ScheduledSequence, SchedulerOutput
 from nanovllm.models.qwen3 import Qwen3ForCausalLM
 from nanovllm.layers.sampler import Sampler
 from nanovllm.utils.context import set_context, get_context, reset_context
@@ -97,7 +98,7 @@ class ModelRunner:
         seqs = [Sequence([0] * seq_len) for _ in range(num_seqs)]
         for seq in seqs:
             seq.num_scheduled_tokens = seq_len
-        self.run(seqs, True)
+        self.run(SchedulerOutput([ScheduledSequence(seq, is_prefill=True) for seq in seqs]))
         torch.cuda.empty_cache()
 
     def allocate_kv_cache(self):
@@ -211,7 +212,11 @@ class ModelRunner:
             graph.replay()
             return self.model.compute_logits(graph_vars["outputs"][:bs])
 
-    def run(self, seqs: list[Sequence], is_prefill: bool) -> list[int]:
+    def run(self, scheduler_output: SchedulerOutput) -> list[int]:
+        is_prefill = scheduler_output.is_prefill
+        if any(item.is_prefill != is_prefill for item in scheduler_output.scheduled):
+            raise RuntimeError("mixed scheduler outputs are not supported until M4")
+        seqs = scheduler_output.seqs
         input_ids, positions = self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
         temperatures = self.prepare_sample(seqs) if self.rank == 0 else None
         logits = self.run_model(input_ids, positions, is_prefill)

@@ -7,6 +7,16 @@ description: Implement changes to the nano-vllm-mixed-batch inference runtime th
 
 Use this skill for every behavior-changing task in this repository. The goal is a sequence of small, explainable, empirically verified changes that preserve the supported upstream paths while building true mixed-batch execution.
 
+For every implementation milestone, after reading this skill, also read and apply
+[`nanovllm-code-modification-learning`](../nanovllm-code-modification-learning/SKILL.md)
+and [`nanovllm-minimal-change`](../nanovllm-minimal-change/SKILL.md).
+This skill owns the milestone lifecycle and correctness constraints; the linked
+skills own the user-facing learning walkthrough and minimal-diff review.
+
+Whenever creating or updating a milestone engineering record or a project
+code-change log, also read and apply
+[`nanovllm-code-change-log`](../nanovllm-code-change-log/SKILL.md).
+
 ## Scope and baseline
 
 - Treat the checked-out upstream-derived baseline as an asset. Do not change public behavior, pure prefill, pure decode, prefix-cache lifecycle, block ownership, or CUDA-graph decode behavior unless the current milestone explicitly names that behavior.
@@ -40,6 +50,13 @@ Apply these whenever the milestone reaches the corresponding layer:
 
 Every milestone must make the codebase and the change teachable. Do not merely say that files changed: explain how the affected subsystem worked before the change, why the change is required, and how it works afterwards.
 
+### 项目记录语言与表达
+
+- 面向用户的计划、Change Preview（改动预览）、Change Review（改动复盘）、验证计划、完成报告、工程记录和项目日志必须使用中文。
+- 优先使用短段落和分点，先说明结论，再说明原因与证据；避免只罗列文件名或术语。
+- 专业名词在一次记录中首次出现时，须在括号中给出简短中文解释；代码标识符、命令和接口名保持原样。例如：`SchedulerOutput`（调度器生成的批次执行计划）。
+- 仅当英文是代码、命令、文件路径、通行缩写或与中文并列有助于定位时保留英文；不可用英文标题替代中文说明。
+
 ### Change Preview — required before editing
 
 Before modifying product source, tests, or behavior-changing configuration, present a Change Preview in the user-visible response. It must include:
@@ -56,11 +73,11 @@ Do not begin implementation until the planned change is clear enough to explain.
 Do not turn a milestone into one opaque patch. Before each logical edit, state:
 
 ```text
-Step N
-Changing: <file / function>
-Purpose: <one behavior or invariant>
-Before: <current logic>
-After: <new logic>
+步骤 N
+修改位置：<文件 / 函数>
+目的：<一个行为或不变量>
+修改前：<当前逻辑>
+修改后：<新逻辑>
 ```
 
 Then make that edit. Keep unrelated concepts in separate steps.
@@ -82,16 +99,16 @@ Scheduler decisions, request state transitions, token budgets, SchedulerOutput c
 If GPU verification cannot run locally, report exactly:
 
 ```text
-Verified locally:
+本地已验证：
 ...
 
-Not yet verified:
+尚未验证：
 ...
 
-Reason:
-requires CUDA/GPU
+原因：
+需要 CUDA/GPU
 
-Future GPU test:
+后续 GPU 测试：
 ...
 ```
 
@@ -118,38 +135,38 @@ For runner/attention work, additionally inspect packed input order, `q_len`/`k_l
 At completion of every milestone, create or update `docs/milestones/<milestone-slug>.md`. Do not pre-create empty records. Use this structure:
 
 ```markdown
-# Milestone: <name>
+# 里程碑：<名称>
 
-## Goal
+## 目标
 
-## Investigation
+## 调查
 
-## Design
+## 设计
 
-## Implementation
+## 实现
 
-## Verification
+## 验证
 
-## GPU Gap
+## GPU 验证缺口
 
-## Engineering Record
+## 工程记录
 
-### Architecture Decision
+### 架构决策
 
-Decision, reason, alternatives, and why alternatives were rejected.
+决策、原因、备选方案，以及不选择备选方案的理由。
 
-### Invariant
+### 不变量
 
-Condition, owner, reason, and violation symptom.
+条件、负责方、原因，以及违反时的表现。
 
-### Bug / Discovery
+### 缺陷或新发现
 
-Observation, root cause, impact, and follow-up.
+观察到的现象、根本原因、影响和后续工作。
 
-## Future Work
+## 后续工作
 ```
 
-The final milestone report must cover System Understanding, Files Changed, Runtime Flow, Key Diff, Verification, GPU Gap, Engineering Record, and the next smallest independent milestone. State what changed, why it changed, the invariant affected, verification actually run and its result, and what intentionally remains unchanged.
+最终里程碑报告必须覆盖：系统理解、改动文件、运行流程、关键差异、验证、GPU 验证缺口、工程记录，以及下一个最小的独立里程碑。说明改了什么、为何要改、影响的不变量、实际运行的验证及其结果，以及刻意保持不变的部分。
 
 ## Explicit prohibitions
 
