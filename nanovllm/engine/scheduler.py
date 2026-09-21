@@ -46,6 +46,27 @@ class Scheduler:
         scheduled = []
         num_batched_tokens = 0
 
+        # decode
+        while (
+            self.running
+            and len(scheduled) < self.max_num_seqs
+            and num_batched_tokens < self.max_num_batched_tokens
+        ):
+            seq = self.running.popleft()
+            while not self.block_manager.can_append(seq):
+                if self.running:
+                    self.preempt(self.running.pop())
+                else:
+                    self.preempt(seq)
+                    break
+            else:
+                seq.num_scheduled_tokens = 1
+                seq.is_prefill = False
+                self.block_manager.may_append(seq)
+                scheduled.append(ScheduledSequence(seq, is_prefill=False))
+
+                num_batched_tokens += seq.num_scheduled_tokens
+
         # prefill
         while self.waiting and len(scheduled) < self.max_num_seqs:
             seq = self.waiting[0]
@@ -59,7 +80,7 @@ class Scheduler:
                 num_tokens = seq.num_tokens - num_cached_blocks * self.block_size
             else:
                 num_tokens = seq.num_tokens - seq.num_cached_tokens
-            if remaining < num_tokens and scheduled:  # only allow chunked prefill for the first seq
+            if remaining < num_tokens and any(item.is_prefill for item in scheduled):
                 break
             if not seq.block_table:
                 self.block_manager.allocate(seq, num_cached_blocks)
@@ -71,25 +92,8 @@ class Scheduler:
                 self.running.append(seq)
             scheduled.append(ScheduledSequence(seq, is_prefill=True))
 
-        if scheduled:
-            return SchedulerOutput(scheduled)
-
-        # decode
-        while self.running and len(scheduled) < self.max_num_seqs:
-            seq = self.running.popleft()
-            while not self.block_manager.can_append(seq):
-                if self.running:
-                    self.preempt(self.running.pop())
-                else:
-                    self.preempt(seq)
-                    break
-            else:
-                seq.num_scheduled_tokens = 1
-                seq.is_prefill = False
-                self.block_manager.may_append(seq)
-                scheduled.append(ScheduledSequence(seq, is_prefill=False))
         assert scheduled
-        self.running.extendleft(reversed([item.seq for item in scheduled]))
+        self.running.extendleft(reversed([item.seq for item in scheduled if not item.is_prefill]))
         return SchedulerOutput(scheduled)
 
     def preempt(self, seq: Sequence):

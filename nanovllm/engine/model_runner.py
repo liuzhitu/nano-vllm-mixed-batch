@@ -127,6 +127,7 @@ class ModelRunner:
         block_tables = torch.tensor(block_tables, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
         return block_tables
 
+    #prepare prefill 不仅代表准备prefill的数据，也将用来准备mixed batch的元数据，因为其逻辑是可以解决decode的批次的。
     def prepare_prefill(self, seqs: list[Sequence]):
         input_ids = []
         positions = []
@@ -143,7 +144,7 @@ class ModelRunner:
             seqlen_k = end
             input_ids.extend(seq[start:end])
             positions.extend(range(start, end))
-            cu_seqlens_q.append(cu_seqlens_q[-1] + seqlen_q)
+            cu_seqlens_q.append(cu_seqlens_q[-1] + seqlen_q)    #seq 拼成tensor后的边界list
             cu_seqlens_k.append(cu_seqlens_k[-1] + seqlen_k)
             max_seqlen_q = max(seqlen_q, max_seqlen_q)
             max_seqlen_k = max(seqlen_k, max_seqlen_k)
@@ -214,11 +215,15 @@ class ModelRunner:
 
     def run(self, scheduler_output: SchedulerOutput) -> list[int | None] | None:
         is_prefill = scheduler_output.is_prefill
-        if any(item.is_prefill != is_prefill for item in scheduler_output.scheduled):
-            raise RuntimeError("mixed scheduler outputs are not supported until M4")
+        is_mixed = any(item.is_prefill != is_prefill for item in scheduler_output.scheduled)
+        use_varlen = is_prefill or is_mixed
         seqs = scheduler_output.seqs
-        input_ids, positions = self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
-        logits = self.run_model(input_ids, positions, is_prefill)
+        if use_varlen:
+            # q_len = 1 segments let prefill's varlen metadata represent decode requests in a mixed plan.
+            input_ids, positions = self.prepare_prefill(seqs)
+        else:
+            input_ids, positions = self.prepare_decode(seqs)
+        logits = self.run_model(input_ids, positions, use_varlen)
         #1. 找出哪些请求应采样：sample_indices
         #2. 只取这些请求的 logits / temperature：sampled
         #3. 将采样结果填回完整计划：token_ids[i] = token_id
